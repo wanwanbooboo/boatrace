@@ -15,6 +15,7 @@
 ---
 
 ## システム構成
+```
 boatrace-ev/
 ├── docker-compose.dev.yml # 開発用 compose 設定
 ├── .env.sample # 環境変数サンプル
@@ -27,6 +28,7 @@ boatrace-ev/
 ├── db/
 │ └── schema.sql # Postgres テーブル定義
 └── README.md
+```
 
 pgsql
 コードをコピーする
