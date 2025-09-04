@@ -1,0 +1,59 @@
+services:                                   # ここから本番サービス定義
+
+  ev-engine:                                # 確率→EV計算API（本番はビルド済みイメージ）
+    image: yourrepo/ev-engine:1.0.0         # レジストリの固定タグを使用
+    environment:                            # 本番設定（envは最小限に）
+      TZ: Asia/Tokyo                        # 表示はTokyo（保存はUTC推奨）
+      MODE: prod                            # 実行モード=prod
+      DATABASE_URL: ${DATABASE_URL}         # 外部RDS等の接続文字列（Secrets化可）
+      REDIS_URL: ${REDIS_URL}               # 外部/別ホストのRedis URL
+      ORDER_MODE: auto                      # 自動発注（開始はmanual/dryrun推奨）
+      DEADLINE_BUFFER_SEC: 20               # 締切◯秒前で打ち切り（ガード）
+      MAX_STAKE_PER_RACE: 2000              # 1レース上限（JPY）
+      DAILY_DD_LIMIT: -0.08                 # 日次最大ドローダウン（-8%で停止）
+    secrets:                                # APIキーなどの機密はSecretsで供給
+      - api_key                             # 例：発注先APIキー（本文は下のsecrets参照）
+    healthcheck:                            # /healthエンドポイント監視
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"] # 成功で0終了
+      interval: 10s                         # チェック間隔
+      timeout: 2s                           # タイムアウト
+      retries: 6                            # 失敗許容回数
+    restart: unless-stopped                 # 常時再起動
+    read_only: true                         # ルートFSを読み取り専用に
+    tmpfs:                                  # 一時書き込みはtmpfsで限定
+      - /tmp:rw,noexec,nosuid,size=64m      # /tmpのみRW（実行不可・権限制限）
+    cap_drop: ["ALL"]                       # ケーパビリティを全削除（最小権限）
+    security_opt:                           # 追加特権無効化
+      - no-new-privileges:true              # 新規権限を拒否
+    # ※composeのdeploy.resourcesはSwarm想定。Compose v2でもドキュメント的意味はあるが強制されない
+    deploy:                                 # 参考：リソース制約の意図を記載
+      resources:                            # 実効制御はホスト側cgroups設定も検討
+        limits: { cpus: "2.0", memory:  "2g" } # 上限：CPU2コア/2GB
+        reservations: { cpus: "1.0", memory: "1g" } # 予約：CPU1コア/1GB
+    # ポートは本番では公開しない（同一ホストのリバースプロキシ/内部NW経由）
+    # ports:                                # 例）内部のみで運用するため未指定
+
+  odds-collector:                           # オッズ/気配/気象収集（本番用）
+    image: yourrepo/odds-collector:1.0.0    # ビルド済みイメージ
+    environment:                            # 本番設定
+      TZ: Asia/Tokyo                        # 表示はTokyo
+      MODE: prod                            # 実行モード=prod
+      DATABASE_URL: ${DATABASE_URL}         # 外部RDSへの接続
+      REDIS_URL: ${REDIS_URL}               # 外部/別ホストのRedis
+    secrets:                                # 機密はSecretsから注入
+      - api_key                             # 収集系APIキーなど
+    restart: unless-stopped                 # 常時再起動
+    read_only: true                         # ルートFSを読み取り専用
+    tmpfs:                                  # 一時書き込み領域
+      - /tmp:rw,noexec,nosuid,size=64m      # /tmpのみRW（実行不可）
+    cap_drop: ["ALL"]                       # 最小権限
+    security_opt:                           # 追加特権無効化
+      - no-new-privileges:true              # 新規権限を拒否
+    deploy:                                 # 参考：リソース制約の意図
+      resources:
+        limits: { cpus: "1.0", memory: "1g" }      # 上限：CPU1/1GB
+        reservations: { cpus: "0.5", memory: "512m" } # 予約：CPU0.5/512MB
+
+secrets:                                    # Compose管理のシークレット（例）
+  api_key:                                  # 名前：api_key
+    file: ./secrets/api_key.txt             # 中身の格納場所（本番はVault/SSM推奨）

@@ -1,0 +1,20 @@
+boatrace-ev/
+├─ docker-compose.dev.yml
+├─ docker-compose.prod.yml
+├─ .env.sample
+├─ secrets/ # 本番は外部Secret管理推奨（ここはdev用）
+│ └─ api_key.txt
+├─ services/
+│ ├─ ev-engine/ # FastAPI: 確率→EV計算API
+│ │ ├─ Dockerfile
+│ │ └─ app/
+│ │ ├─ main.py
+│ │ └─ ...
+│ └─ odds-collector/ # オッズ/板・気象など収集ワーカー
+│ ├─ Dockerfile
+│ └─ main.py
+├─ db/
+│ ├─ migrations/ # Alembicなど
+│ └─ schema.sql # 雛形
+└─ docs/
+└─ runbook.md # 運用Runbook

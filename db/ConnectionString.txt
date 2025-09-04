@@ -1,0 +1,11 @@
+docker compose -f docker-compose.dev.yml exec postgres sh
+psql -U app -d boatrace
+-- 直近のordersを10件
+SELECT id, race_id, bet_type, selection, amount, status, requested_at
+FROM orders
+ORDER BY id DESC
+LIMIT 10;
+
+-- 終わったら \q でpsql終了、exitでシェル退出
+\q
+exit

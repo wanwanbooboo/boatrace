@@ -1,0 +1,74 @@
+services:                                   # ここから各サービス定義
+
+  postgres:                                 # 開発用PostgreSQL（本番は外出し推奨）
+    image: postgres:16                      # 公式Postgres v16イメージ
+    environment:                            # 初期ユーザ/DBなどの環境変数
+      POSTGRES_USER: app                    # DBユーザ名（開発用）
+      POSTGRES_PASSWORD: app                # DBパスワード（開発用）
+      POSTGRES_DB: boatrace                 # 作成するDB名
+    volumes:                                # データ永続化（ローカルVolume）
+      - pgdata:/var/lib/postgresql/data     # pgdataにDBデータを保存
+    healthcheck:                            # 起動ヘルスチェック
+      test: ["CMD-SHELL", "pg_isready -U app"] # 接続可否を確認
+      interval: 10s                         # チェック間隔
+      timeout: 3s                           # タイムアウト
+      retries: 10                           # 失敗許容回数
+    restart: unless-stopped                 # 手動停止以外で常時再起動
+
+  redis:                                    # キュー/キャッシュ用のRedis
+    image: redis:7                          # 公式Redis v7イメージ
+    command: ["redis-server", "--appendonly", "yes"] # AOFで耐障害性を確保
+    volumes:                                # Redisデータの永続化
+      - redisdata:/data                     # redisdataに保存
+    healthcheck:                            # Redisのヘルスチェック
+      test: ["CMD", "redis-cli", "ping"]    # PING応答確認
+      interval: 10s                         # チェック間隔
+      timeout: 3s                           # タイムアウト
+      retries: 10                           # 失敗許容回数
+    restart: unless-stopped                 # 常時再起動
+
+  ev-engine:                                # 確率→EV計算のAPI（FastAPIなど）
+    build: ./services/ev-engine             # ローカルDockerfileからビルド
+    env_file: .env                   # 開発用環境変数（本番はSecrets）
+    environment:                            # 追加環境変数
+      TZ: ${TZ}                             # ローカルのタイムゾーンを反映
+    volumes:
+      - ./services/ev-engine/app:/app/app:ro   # ← ソースをマウント（読取専用でOK）
+    command: ["python", "-m", "uvicorn", "app.main:app",
+              "--host", "0.0.0.0", "--port", "8000", "--reload"]  # ← 変更監視
+    depends_on:                             # 依存（ヘルシーになるまで待機）
+      postgres:
+        condition: service_healthy          # Postgresがヘルシー前提で起動
+      redis:
+        condition: service_healthy          # Redisがヘルシー前提で起動
+    ports:                                  # ローカルのみ公開
+      - "127.0.0.1:8000:8000"               # 127.0.0.1にバインド→外部非公開
+    healthcheck:                            # 自サービスのヘルスチェック
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"] # /health確認
+      interval: 10s                         # チェック間隔
+      timeout: 2s                           # タイムアウト
+      retries: 10                           # 失敗許容回数
+    restart: unless-stopped                 # 常時再起動
+    cap_drop: ["ALL"]                       # 追加ケーパビリティを全て落とす
+    security_opt:                           # セキュリティ強化
+      - no-new-privileges:true              # 実行時に新規権限を与えない
+
+  odds-collector:                           # オッズ/気配/気象などの収集ワーカー
+    build: ./services/odds-collector        # ローカルDockerfileからビルド
+    env_file: .env                   # 開発用環境変数
+    environment:                            # タイムゾーンなど
+      TZ: ${TZ}                             # ローカルのタイムゾーンを反映
+    depends_on:                             # DB/Redisに依存
+      postgres:
+        condition: service_healthy          # Postgresヘルシー前提
+      redis:
+        condition: service_healthy          # Redisヘルシー前提
+    command: ["python", "-u", "main.py"]    # バッファ無しログ出力で実行
+    restart: unless-stopped                 # 常時再起動
+    cap_drop: ["ALL"]                       # 権限最小化
+    security_opt:                           # 追加権限を付与しない
+      - no-new-privileges:true
+
+volumes:                                    # 名前付きボリューム定義
+  pgdata:                                   # Postgresデータ用ボリューム
+  redisdata:                                # Redisデータ用ボリューム
